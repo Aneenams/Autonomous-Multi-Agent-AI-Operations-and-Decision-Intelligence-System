@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+.crewai/
+*.pt
+*.mp4
+*.jpe
+*.jpg
+.env
