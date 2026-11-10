@@ -70,16 +70,34 @@ def correct_plate_ocr(raw_plate_text):
 
 
 
+import requests  # Make sure requests is imported at the top of your file
+
 def run_safety_agent_check():
-    """Simulates checking live I2C telemetry (Temperature & ADXL345 Vibration)."""
-    # Simulate normal operating conditions
-    temp = round(random.uniform(28.0, 32.5), 1)
-    vibration = round(random.uniform(0.01, 0.05), 2)
+    """Fetches live temperature and ADXL345 vibration telemetry from the physical ESP32."""
+    esp32_ip = "192.168.1.82"
+    url = f"http://{esp32_ip}/telemetry"
     
-    # Thresholds for automatic shutdown
-    if temp > 40.0 or vibration > 0.2:
-        return "Hazard", f"HAZARD: Temp {temp}C, Vib {vibration}g."
-    return "Nominal", f"Safe: Temp {temp}C, Vib {vibration}g."
+    try:
+        # Ping the physical ESP32 board over your local Wi-Fi
+        response = requests.get(url, timeout=2.0)
+        if response.status_code == 200:
+            data = response.json()
+            temp = data.get("temperature", 25.0)
+            vibration = data.get("vibration", 0.0)
+            
+            print(f"[IOT TELEMETRY] Temp: {temp}°C | Vibration: {vibration}g")
+            
+            # Policy Engine Safety Gatekeeper Rules
+            if temp > 40.0 or vibration > 0.1:
+                return "Hazard", f"HAZARD: Temp {temp}C, Vib {vibration}g."
+            return "Nominal", f"Safe: Temp {temp}C, Vib {vibration}g."
+        else:
+            return "Hazard", "ESP32 returned error status."
+            
+    except requests.exceptions.RequestException as e:
+        print(f"[WARNING] Could not reach ESP32 at {esp32_ip}: {e}")
+        # Fail-safe: If the sensor is offline, lock down the station for safety
+        return "Hazard", "Safety Sensor Offline - Lockout Engaged."
 
 def direct_database_check(plate, vehicle_type):
     """Checks registration, payment, and environmental safety sequentially."""
@@ -108,6 +126,12 @@ def direct_database_check(plate, vehicle_type):
                 if safety_status == "Nominal":
                     decision = "APPROVED"
                     reason = f"Cleared. {safety_reason}"
+                    try:
+                        requests.post(f"http://192.168.1.82/approve", timeout=2.0)
+                        print("[HARDWARE] Approval signal sent to ESP32 fuel pump relay.")
+                    except requests.exceptions.RequestException as e:
+                        print(f"[WARNING] Could not trigger hardware relay: {e}")
+                        
                 else:
                     decision = "REJECTED"
                     reason = f"Safety Lockout: {safety_reason}"
