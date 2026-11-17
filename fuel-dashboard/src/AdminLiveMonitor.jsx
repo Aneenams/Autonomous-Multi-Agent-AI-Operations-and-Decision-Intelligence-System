@@ -117,7 +117,9 @@ export default function AdminLiveMonitor() {
                     <tr className="table-warning border-warning shadow-sm">
                       <td className="text-muted fw-bold">--</td>
                       <td className="fw-bold font-monospace fs-6 text-primary">{liveStatus.plate}</td>
-                      <td><Spinner animation="grow" variant="warning" size="sm" /></td>
+                      <td className="fw-bold">
+                        {liveStatus.vehicle_type || "Unknown"} <Spinner animation="grow" variant="warning" size="sm" className="ms-2" />
+                      </td>
                       <td>
                         <Badge bg="warning" className="text-dark py-2 px-3">EVALUATING</Badge>
                       </td>
