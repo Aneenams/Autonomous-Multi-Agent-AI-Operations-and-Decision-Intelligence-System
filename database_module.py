@@ -1,67 +1,68 @@
-# Simulated PostgreSQL Database tables for the prototype
-MOCK_DATABASE = {
-    "plates": {
-        "MH 12AB 3456": {"booking_id": "BKG-9901", "user": "Rahul"},
-        "TN09BY 9726": {"booking_id": "BKG-9902", "user": "Aneena"}
-    },
-    "bookings": {
-        "BKG-9901": {"slot": "A1", "service": "Fuel", "status": "CONFIRMED"},
-        "BKG-9902": {"slot": "B2", "service": "Charging", "status": "CONFIRMED"}
-    },
-    "payments": {
-        "BKG-9901": {"paid": True, "amount": 1500},
-        "BKG-9902": {"paid": False, "amount": 800}
-    }
-}
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker
+from datetime import datetime
 
-def check_booking(plate_number):
-    """Simulates the Booking Agent's database lookup."""
-    print(f"Checking database for plate: {plate_number}...")
-    
-    # 1. Clean the OCR text (remove spaces and special characters if needed)
+# Connect to your local PostgreSQL database
+# Format: postgresql://username:password@localhost:5432/database_name
+DATABASE_URL = "mysql+pymysql://root:root2003@localhost:3306/fuel_station" 
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# ---------------------------------------------------------
+# 1. Define Database Models
+# ---------------------------------------------------------
+# ---------------------------------------------------------
+# 1. Define Database Models
+# ---------------------------------------------------------
+class Booking(Base):
+    __tablename__ = "bookings"
+    id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(String(50), unique=True, index=True)
+    plate_number = Column(String(20), unique=True, index=True)
+    user_name = Column(String(100))
+    is_paid = Column(Boolean, default=False)
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    plate_number = Column(String(20), index=True)
+    decision = Column(String(50))
+    reason = Column(String(255))
+    timestamp = Column(DateTime, default=datetime.utcnow)
+# Generate tables in PostgreSQL automatically
+Base.metadata.create_all(bind=engine)
+
+# ---------------------------------------------------------
+# 2. Tool Functions for the AI Orchestrator
+# ---------------------------------------------------------
+def check_booking(plate_number: str):
+    """Searches the database for a matching plate and returns the booking ID."""
+    db = SessionLocal()
+    # Remove spaces and convert to uppercase for standardized matching
     clean_plate = plate_number.replace(" ", "").upper()
     
-    # 2. Look up the plate (using original formatting for the mock DB match)
-    vehicle_record = MOCK_DATABASE["plates"].get(plate_number)
+    booking = db.query(Booking).filter(Booking.plate_number == clean_plate).first()
+    db.close()
     
-    if not vehicle_record:
-        print("❌ No matching vehicle found in database.")
-        return None
-        
-    booking_id = vehicle_record["booking_id"]
-    booking_details = MOCK_DATABASE["bookings"].get(booking_id)
-    
-    print(f"✅ Booking Found! ID: {booking_id} for User: {vehicle_record['user']}")
-    return booking_id
-
-def check_payment(booking_id):
-    """Simulates the Payment Agent's database lookup."""
-    print(f"Checking payment status for Booking ID: {booking_id}...")
-    
-    payment_record = MOCK_DATABASE["payments"].get(booking_id)
-    
-    if not payment_record:
-        print("❌ Payment record not found.")
-        return False
-        
-    if payment_record["paid"]:
-        print(f"✅ Payment Confirmed. Amount: ₹{payment_record['amount']}")
-        return True
-    else:
-        print(f"❌ Payment Pending! Amount Due: ₹{payment_record['amount']}")
-        return False
-
-if __name__ == "__main__":
-    # Test Case 1: Valid Plate, Paid
-    print("--- TEST CASE 1 ---")
-    plate_from_ocr = "MH 12AB 3456"
-    booking = check_booking(plate_from_ocr)
     if booking:
-        check_payment(booking)
-        
-    print("\n--- TEST CASE 2 ---")
-    # Test Case 2: Valid Plate, Not Paid
-    plate_from_ocr_2 = "TN09BY 9726"
-    booking_2 = check_booking(plate_from_ocr_2)
-    if booking_2:
-        check_payment(booking_2)
+        return booking.booking_id
+    return None
+
+def check_payment(booking_id: str):
+    """Checks if a specific booking ID has a completed payment."""
+    db = SessionLocal()
+    booking = db.query(Booking).filter(Booking.booking_id == booking_id).first()
+    db.close()
+    
+    if booking:
+        return booking.is_paid
+    return False
+
+def log_decision(plate_number: str, decision: str, reason: str):
+    """Saves the AI's final policy decision into the Audit Log."""
+    db = SessionLocal()
+    new_log = AuditLog(plate_number=plate_number, decision=decision, reason=reason)
+    db.add(new_log)
+    db.commit()
+    db.close()
